@@ -55,9 +55,9 @@ def init_xtdatacenter_once():
             logger.info('迅投数据中心初始化完成')
             
             # 监听端口
-            # port = settings.XT_CONFIG['PORT']
+            port = settings.XT_CONFIG['PORT']
             # xtdc.listen(port=58601)
-            listen_addr = xtdc.listen(port = 58610)
+            listen_addr = xtdc.listen(port = port)
             print(f'done, listen_addr:{listen_addr}')
             # logger.info(f'迅投服务启动，开放端口：{port}')
             

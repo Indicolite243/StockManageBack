@@ -435,7 +435,7 @@ def get_risk_assessment(request):
     # 获取参数
     account_id = request.GET.get('account_id')
     days = int(request.GET.get('days', 30))
-    use_mock = request.GET.get('mock', 'true').lower() == 'true'
+    use_mock = request.GET.get('mock', 'false').lower() == 'true'
     
     if not account_id:
         logger.error('缺少account_id参数')
@@ -448,18 +448,24 @@ def get_risk_assessment(request):
         }, status=400)
     
     # 获取历史数据
-    if not use_mock:
-        account_history = get_account_history_from_xt(account_id, days)
-    else:
-        account_history = None
+    account_history = None
+    is_mock = use_mock
     
-    # 如果没有真实数据，使用模拟数据
-    if account_history is None:
-        logger.info('使用模拟数据')
+    try:
+        if not use_mock:
+            account_history = get_account_history_from_xt(account_id, days)
+            if account_history is None:
+                logger.warning(f'账户 {account_id} 无历史数据，尝试使用模拟数据')
+                is_mock = True
+    except Exception as e:
+        logger.error(f'获取真实历史数据失败: {str(e)}')
+        is_mock = True
+    
+    # 如果处于模拟模式或获取真实数据失败，使用模拟数据
+    if is_mock or account_history is None:
+        logger.info('使用模拟数据进行风险评估')
         account_history = get_mock_account_history(days)
         is_mock = True
-    else:
-        is_mock = False
     
     # 计算各项风险指标
     max_loss = calculate_max_principal_loss(account_history)

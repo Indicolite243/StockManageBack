@@ -32,8 +32,9 @@ def get_account_info(request):
         xt_trader, connected = get_xt_trader_connection()
         if not connected:
             logger.error('连接交易接口失败')
-            logger.info('自动切换到模拟数据模式')
-            return get_mock_account_info()
+            # logger.info('自动切换到模拟数据模式')
+            # return get_mock_account_info()
+            return JsonResponse({'success': False, 'error': '连接交易接口失败', 'accounts': []}, status=503)
 
         # 查询所有账户信息
         accounts = xt_trader.query_account_infos()
@@ -104,8 +105,9 @@ def get_account_info(request):
         
     except Exception as e:
         logger.error(f'获取账户信息失败: {str(e)}', exc_info=True)
-        logger.info('发生错误，自动切换到模拟数据模式')
-        return get_mock_account_info()
+        # logger.info('发生错误，自动切换到模拟数据模式')
+        # return get_mock_account_info()
+        return JsonResponse({'success': False, 'error': str(e), 'accounts': []}, status=500)
 
 
 def convert_positions(positions, account_id):
@@ -119,22 +121,62 @@ def convert_positions(positions, account_id):
         return []
     
     pos_list = []
+    
+    # 获取所有持仓的股票代码列表
+    stock_codes = [pos.stock_code for pos in positions]
+    
+    # 批量获取实时行情数据以显示当前价格
+    # 注意：xtdata 需要在 MiniQMT 运行时才能获取数据
+    current_prices = {}
+    try:
+        logger.info(f'尝试获取实时行情，股票列表: {stock_codes}')
+        # 订阅这些股票的行情（确保数据是最新的）
+        # 使用 'tick' 周期订阅实时行情
+        for code in stock_codes:
+            xtdata.subscribe_quote(code, period='1d', start_time='', end_time='', count=0, callback=None)
+        
+        # 获取全推数据
+        ticks = xtdata.get_full_tick(stock_codes)
+        if ticks:
+            for code, tick in ticks.items():
+                if tick and 'lastPrice' in tick:
+                    price = tick['lastPrice']
+                    # 过滤掉价格为0的无效数据（停牌或未开盘可能导致0）
+                    if price > 0:
+                        current_prices[code] = price
+            logger.info(f'成功获取实时行情: {len(current_prices)} 只股票')
+        else:
+            logger.warning('获取到的 tick 数据为空')
+            
+    except Exception as e:
+        logger.warning(f'获取实时行情失败: {str(e)}')
+
     for pos in positions:
         try:
+            # 确定当前价格：优先使用实时行情，否则通过市值/数量计算，最后使用开仓价兜底
+            current_price = 0.0
+            if pos.stock_code in current_prices:
+                current_price = current_prices[pos.stock_code]
+            elif pos.volume > 0 and hasattr(pos, 'market_value'):
+                # 如果没有实时行情，尝试用 市值/数量 计算隐含价格
+                current_price = pos.market_value / pos.volume
+            elif hasattr(pos, 'open_price'):
+                current_price = pos.open_price
+
             # 确保所有数值类型正确转换
             pos_data = {
                 'account_id': str(account_id),
                 'account_type': str(pos.account_type) if hasattr(pos, 'account_type') else 'STOCK',
                 'stock_code': str(pos.stock_code),  # 股票代码，如 "600000.SH"
-                'stock_name': str(getattr(pos, 'stock_name', pos.stock_code)),  # 股票名称
+                'stock_name': xtdata.get_instrument_detail(pos.stock_code).get('InstrumentName', pos.stock_code) if xtdata.get_instrument_detail(pos.stock_code) else str(pos.stock_code),  # 股票名称
                 'volume': int(pos.volume),  # 持仓数量
                 'can_use_volume': int(pos.can_use_volume),  # 可用数量
-                'open_price': float(pos.open_price) if hasattr(pos, 'open_price') else 0.0,  # 开仓价（或当前价格）
+                'open_price': round(float(current_price), 2),  # 当前价格（修正为实时行情价格）
                 'market_value': float(pos.market_value),  # 市值
                 'frozen_volume': int(pos.frozen_volume) if hasattr(pos, 'frozen_volume') and pos.frozen_volume else 0,  # 冻结数量
                 'on_road_volume': int(pos.on_road_volume) if hasattr(pos, 'on_road_volume') and pos.on_road_volume else 0,  # 在途股份
                 'yesterday_volume': int(pos.yesterday_volume) if hasattr(pos, 'yesterday_volume') else 0,  # 昨日持仓
-                'avg_price': float(pos.avg_price) if hasattr(pos, 'avg_price') else 0.0,  # 成本价
+                'avg_price': round(float(pos.open_price), 2) if hasattr(pos, 'open_price') else 0.0,  # 成本价（修正为使用open_price作为成本价）
             }
             pos_list.append(pos_data)
         except Exception as e:

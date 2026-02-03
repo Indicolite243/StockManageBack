@@ -12,6 +12,38 @@ from typing import Literal
 Region = Literal["上海", "深圳", "北京", "广州", "杭州", "其他"]
 
 
+def get_stock_industry(stock_code: str) -> str:
+    """
+    获取股票所属行业
+    这是一个占位实现，实际可结合 xtdata.get_stock_sector 或数据库获取
+    """
+    if not stock_code:
+        return "其他"
+
+    # 简单映射一些常见股票用于演示
+    industry_map = {
+        '600519': '食品饮料',
+        '000858': '食品饮料',
+        '601318': '非银金融',
+        '600036': '银行',
+        '000001': '银行',
+        '600887': '食品饮料',
+        '601012': '电力设备',
+        '300750': '电力设备',
+        '000651': '家用电器',
+        '600030': '非银金融',
+        '002415': '电子',
+        '600276': '医药生物',
+        '000333': '家用电器',
+        '601888': '社会服务',
+        '002594': '汽车',
+        '300059': '非银金融',
+    }
+
+    code = stock_code.split('.')[0]
+    return industry_map.get(code, '其他')
+
+
 def get_stock_region(stock_code: str) -> Region:
     """
     Return the listing region for a given stock code.

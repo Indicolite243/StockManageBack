@@ -13,4 +13,5 @@ pip install xtquant pymongo djangorestframework django-cors-headers djangorestfr
 
 # 启动 Django 项目
 
-python manage.py runserver
+python manage.py runserver --noreload
+
