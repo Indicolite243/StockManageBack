@@ -11,6 +11,23 @@ from apps.utils.xt_trader import get_xt_trader_connection, create_stock_account
 logger = logging.getLogger(__name__)
 
 
+def resolve_stock_name(stock_code):
+    """Resolve instrument name from xtdata with safe fallbacks."""
+    if not stock_code:
+        return ''
+
+    try:
+        detail = xtdata.get_instrument_detail(stock_code)
+        if isinstance(detail, dict):
+            return detail.get('InstrumentName') or detail.get('instrument_name') or str(stock_code)
+        if detail:
+            return getattr(detail, 'InstrumentName', None) or getattr(detail, 'instrument_name', None) or str(stock_code)
+    except Exception as e:
+        logger.warning(f'获取股票 {stock_code} 名称失败: {str(e)}')
+
+    return str(stock_code)
+
+
 @api_view(['GET'])
 def get_account_info(request):
     """
@@ -168,7 +185,7 @@ def convert_positions(positions, account_id):
                 'account_id': str(account_id),
                 'account_type': str(pos.account_type) if hasattr(pos, 'account_type') else 'STOCK',
                 'stock_code': str(pos.stock_code),  # 股票代码，如 "600000.SH"
-                'stock_name': xtdata.get_instrument_detail(pos.stock_code).get('InstrumentName', pos.stock_code) if xtdata.get_instrument_detail(pos.stock_code) else str(pos.stock_code),  # 股票名称
+                'stock_name': resolve_stock_name(pos.stock_code),  # 股票名称
                 'volume': int(pos.volume),  # 持仓数量
                 'can_use_volume': int(pos.can_use_volume),  # 可用数量
                 'open_price': round(float(current_price), 2),  # 当前价格（修正为实时行情价格）

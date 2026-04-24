@@ -11,6 +11,23 @@ from apps.utils.xt_trader import get_xt_trader_connection, create_stock_account
 logger = logging.getLogger(__name__)
 
 
+def resolve_stock_name(stock_code):
+    """Resolve instrument name from xtdata with safe fallbacks."""
+    if not stock_code:
+        return ''
+
+    try:
+        detail = xtdata.get_instrument_detail(stock_code)
+        if isinstance(detail, dict):
+            return detail.get('InstrumentName') or detail.get('instrument_name') or str(stock_code)
+        if detail:
+            return getattr(detail, 'InstrumentName', None) or getattr(detail, 'instrument_name', None) or str(stock_code)
+    except Exception as e:
+        logger.warning(f'获取股票 {stock_code} 名称失败: {str(e)}')
+
+    return str(stock_code)
+
+
 # ==================== 时间段对比模块 ====================
 
 # 全局缓存，用于在真实数据获取失败时返回上一次成功的数据，减少闪烁
@@ -638,18 +655,11 @@ def asset_comparison(request):
         # 获取股票代码列表，用于查询股票名称
         stock_codes = [pos.stock_code for pos in positions]
         
-        # 尝试从xtdata获取股票名称
         stock_names = {}
         try:
             for stock_code in stock_codes:
                 try:
-                    # 使用xtdata获取股票信息
-                    instrument_detail = xtdata.get_instrument_detail(stock_code)
-                    if instrument_detail and hasattr(instrument_detail, 'InstrumentName'):
-                        stock_names[stock_code] = instrument_detail.InstrumentName
-                    else:
-                        # 如果获取失败，使用股票代码作为名称
-                        stock_names[stock_code] = stock_code
+                    stock_names[stock_code] = resolve_stock_name(stock_code)
                 except Exception as e:
                     logger.warning(f'获取股票 {stock_code} 名称失败: {str(e)}')
                     stock_names[stock_code] = stock_code

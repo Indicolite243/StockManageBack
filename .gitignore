@@ -51,3 +51,13 @@ data/datadir/
 data/log/
 *.bo
 *.fe
+
+# Backtest artifacts
+ETF_strategy_report_*.md
+ETF_strategy_trades_*.xlsx
+strategy_performance.json
+
+# Uploaded strategy temp files
+uploads/strategies/*.py
+uploads/strategies/*_injected.py
+!uploads/strategies/.gitkeep
