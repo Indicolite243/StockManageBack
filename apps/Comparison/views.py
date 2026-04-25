@@ -6,6 +6,7 @@ from rest_framework.decorators import api_view
 from xtquant import xtdata
 from django.conf import settings
 from apps.utils.xt_trader import get_xt_trader_connection, create_stock_account
+from apps.utils.data_storage import get_latest_account_state
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -593,150 +594,167 @@ def get_mock_area_comparison():
 @api_view(['GET'])
 def asset_comparison(request):
     """
-    资产对比接口（单个账户的资产占比分析）
-    API路径: /api/asset_comparison/
-    参数: account_id (必填)
-    
-    注意：这是原有的资产对比接口，用于单个账户内各股票的对比
+    ????????????????????
+    ?? source=qmt|mongodb|auto
     """
-    logger.info('开始获取资产对比数据')
-    
-    # 检查是否使用模拟数据
+    logger.info('??????????')
+
     use_mock = request.GET.get('mock', 'false').lower() == 'true'
-    # 如果没传 account_id，默认使用 62283925
     account_id = request.GET.get('account_id', '62283925')
-    
+    source = (request.GET.get('source') or 'qmt').strip().lower()
+    if source not in {'qmt', 'mongodb', 'auto'}:
+        source = 'qmt'
+
     if use_mock:
-        logger.info(f'使用模拟数据模式 - 账户ID: {account_id}')
+        logger.info('???????? - ????')
         return get_mock_asset_comparison()
-    
+
+    def build_snapshot_result(snapshot):
+        positions = snapshot.get('positions', [])
+        total_market_value = float(snapshot.get('market_value', 0) or 0)
+        pos_list = []
+        for position in positions:
+            market_value = float(position.get('market_value', 0) or 0)
+            current_price = float(position.get('current_price', position.get('open_price', 0)) or 0)
+            cost_price = float(position.get('cost_price', position.get('avg_price', 0)) or 0)
+            asset_ratio = (market_value / total_market_value * 100) if total_market_value > 0 else 0
+            profit_loss_rate = ((current_price - cost_price) / cost_price * 100) if cost_price > 0 else 0
+            pos_list.append({
+                'stock_code': position.get('stock_code', ''),
+                'stock_name': position.get('stock_name') or position.get('stock_code', ''),
+                'market_value': round(market_value, 2),
+                'volume': int(position.get('volume', 0) or 0),
+                'current_price': round(current_price, 2),
+                'cost_price': round(cost_price, 2),
+                'industry': '',
+                'asset_ratio': round(asset_ratio, 2),
+                'percentage': round(asset_ratio, 2),
+                'daily_return': round(profit_loss_rate, 2),
+                'profit_loss_rate': round(profit_loss_rate, 2)
+            })
+        pos_list.sort(key=lambda item: item['market_value'], reverse=True)
+        return {
+            'total_market_value': round(total_market_value, 2),
+            'asset_data': pos_list,
+            'positions': pos_list,
+            'is_real_data': False,
+            'data_source': 'mongodb_cache',
+            'snapshot_time': snapshot.get('snapshot_time'),
+        }
+
+    if source == 'mongodb':
+        snapshot = get_latest_account_state(account_id)
+        if snapshot:
+            return JsonResponse(build_snapshot_result(snapshot))
+        return JsonResponse({'success': False, 'error': 'MongoDB ???????????'}, status=404)
+
     try:
-        logger.info(f'开始获取账户 {account_id} 的资产对比数据（真实数据）')
-        
-        # 使用统一的交易接口连接工具
+        logger.info('?????? %s ????????QMT ???', account_id)
         xt_trader, connected = get_xt_trader_connection()
-        # 强制指定真实账户ID
-        target_account_id = '62283925'
-        
-        if not connected:
-            logger.warning(f'连接交易接口状态为未连接，但将尝试强制使用账户 {target_account_id}')
-            if not xt_trader:
-                logger.error('xt_trader 实例不存在，回退到模拟数据')
-                return get_mock_asset_comparison()
+        target_account_id = account_id or '62283925'
+        if not connected or not xt_trader:
+            raise RuntimeError('????????')
 
-        # 查询账户信息
         acc = create_stock_account(target_account_id)
-
-        # 订阅该账户的交易回调
-        subscribe_result = xt_trader.subscribe(acc)
-        if subscribe_result != 0:
-            logger.warning(f'订阅账户失败，错误码: {subscribe_result}')
-
-        # 查询账户资产信息
+        xt_trader.subscribe(acc)
         asset = xt_trader.query_stock_asset(acc)
         if not asset:
-            logger.error('未查询到账户资产信息')
-            # return get_mock_asset_comparison()
-            return JsonResponse({'success': False, 'error': '未查询到账户资产信息'}, status=404)
+            raise RuntimeError('??????????')
 
-        # 查询该账户的持仓信息
         positions = xt_trader.query_stock_positions(acc)
         if not positions:
-            logger.warning('未查询到持仓信息')
             return JsonResponse({
                 'total_market_value': 0.00,
-                'positions': []
+                'asset_data': [],
+                'positions': [],
+                'is_real_data': True,
+                'data_source': 'qmt_live',
+                'snapshot_time': datetime.datetime.now().isoformat(timespec='seconds'),
             })
 
-        # 提取并计算用户持仓信息
-        pos_list = []
-        total_market_value = float(asset.market_value)  # 总持仓市值
-        
-        # 获取股票代码列表，用于查询股票名称
         stock_codes = [pos.stock_code for pos in positions]
-        
         stock_names = {}
-        try:
-            for stock_code in stock_codes:
-                try:
-                    stock_names[stock_code] = resolve_stock_name(stock_code)
-                except Exception as e:
-                    logger.warning(f'获取股票 {stock_code} 名称失败: {str(e)}')
-                    stock_names[stock_code] = stock_code
-        except Exception as e:
-            logger.warning(f'批量获取股票名称失败: {str(e)}')
-            # 如果批量获取失败，为每个股票代码设置默认名称
-            for stock_code in stock_codes:
-                stock_names[stock_code] = stock_code
-        
-        # 获取股票行业信息
+        for stock_code in stock_codes:
+            stock_names[stock_code] = resolve_stock_name(stock_code)
+
         from apps.utils.stock_info import get_stock_industry
 
+        pos_list = []
+        total_market_value = float(asset.market_value)
+        snapshot_positions = []
         for pos in positions:
-            stock_code = pos.stock_code  # 股票代码
-            stock_name = stock_names.get(stock_code, stock_code)  # 股票名称
-            market_value = float(pos.market_value)  # 市值
-            industry = get_stock_industry(stock_code)  # 获取行业信息
-            
-            # 获取持仓数量
+            stock_code = pos.stock_code
+            stock_name = stock_names.get(stock_code, stock_code)
+            market_value = float(pos.market_value)
+            industry = get_stock_industry(stock_code)
             volume = int(pos.volume)
-            
-            # 获取成本价 (pos.open_price 通常是开仓均价/成本价)
             cost_price = float(pos.open_price) if hasattr(pos, 'open_price') else 0.0
-            
-            # 计算最新价格 (通过 市值/数量 反推，或者如果没有数量则为0)
-            current_price = 0.0
-            if volume > 0:
-                current_price = market_value / volume
-            elif cost_price > 0:
-                current_price = cost_price
-
-            # 计算各支股票的资产占比
+            current_price = market_value / volume if volume > 0 else cost_price
             asset_ratio = (market_value / total_market_value * 100) if total_market_value > 0 else 0
-
-            # 计算收益率 (最新价 - 成本价) / 成本价
-            # 注意：这里计算的是持仓盈亏率，非当日涨跌幅
             profit_loss_rate = ((current_price - cost_price) / cost_price) * 100 if cost_price > 0 else 0
 
-            pos_data = {
+            item = {
                 'stock_code': stock_code,
                 'stock_name': stock_name,
                 'market_value': round(market_value, 2),
-                'volume': volume,  # 持仓数量
-                'current_price': round(current_price, 2),  # 当前价格
-                'cost_price': round(cost_price, 2),  # 成本价
-                'industry': industry,  # 行业
+                'volume': volume,
+                'current_price': round(current_price, 2),
+                'cost_price': round(cost_price, 2),
+                'industry': industry,
                 'asset_ratio': round(asset_ratio, 2),
-                'percentage': round(asset_ratio, 2),  # 兼容字段
-                'daily_return': round(profit_loss_rate, 2), # 前端显示用
-                'profit_loss_rate': round(profit_loss_rate, 2)  # 兼容字段
+                'percentage': round(asset_ratio, 2),
+                'daily_return': round(profit_loss_rate, 2),
+                'profit_loss_rate': round(profit_loss_rate, 2)
             }
-            pos_list.append(pos_data)
+            pos_list.append(item)
+            snapshot_positions.append({
+                'stock_code': stock_code,
+                'stock_name': stock_name,
+                'volume': volume,
+                'can_use_volume': int(getattr(pos, 'can_use_volume', volume) or 0),
+                'current_price': round(current_price, 2),
+                'open_price': round(current_price, 2),
+                'avg_price': round(cost_price, 2),
+                'cost_price': round(cost_price, 2),
+                'market_value': round(market_value, 2),
+            })
 
-        # 按市值降序排序
-        pos_list.sort(key=lambda x: x['market_value'], reverse=True)
+        pos_list.sort(key=lambda item: item['market_value'], reverse=True)
+        try:
+            from apps.utils.data_storage import save_account_snapshot
+            save_account_snapshot(target_account_id, {
+                'account_id': target_account_id,
+                'total_asset': float(asset.total_asset),
+                'cash': float(asset.cash),
+                'frozen_cash': float(asset.frozen_cash),
+                'market_value': float(asset.market_value),
+                'positions': snapshot_positions,
+            }, source='qmt_live')
+        except Exception as snapshot_error:
+            logger.warning('??????????: %s', str(snapshot_error))
 
-        # 返回结果，同时支持asset_data和positions字段名（前端兼容）
         result = {
             'total_market_value': round(total_market_value, 2),
-            'asset_data': pos_list,  # 前端主要使用这个字段
-            'positions': pos_list,  # 兼容字段
-            'is_real_data': True
+            'asset_data': pos_list,
+            'positions': pos_list,
+            'is_real_data': True,
+            'data_source': 'qmt_live',
+            'snapshot_time': datetime.datetime.now().isoformat(timespec='seconds'),
         }
-        # 更新缓存
-        LAST_SUCCESSFUL_DATA['asset_comparison'][account_id] = result
+        LAST_SUCCESSFUL_DATA['asset_comparison'][target_account_id] = result
         return JsonResponse(result)
-
     except Exception as e:
-        logger.error(f'获取资产对比数据失败: {str(e)}', exc_info=True)
-        # 尝试从缓存中获取上一次成功的数据
+        logger.error('??????????: %s', str(e), exc_info=True)
+        snapshot = get_latest_account_state(account_id)
+        if snapshot:
+            result = build_snapshot_result(snapshot)
+            result['fallback_reason'] = str(e)
+            return JsonResponse(result)
+
         cached_data = LAST_SUCCESSFUL_DATA['asset_comparison'].get(account_id)
         if cached_data:
-            logger.info(f'从缓存中恢复账户 {account_id} 的资产对比数据，避免回退到模拟数据导致的闪烁')
             cached_data['is_cached'] = True
             return JsonResponse(cached_data)
-            
-        logger.info('发生错误且无缓存，自动切换到模拟数据模式以确保前端渲染')
         return get_mock_asset_comparison()
 
 

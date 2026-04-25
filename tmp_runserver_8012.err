@@ -1,0 +1,41 @@
+保存账户快照失败: MongoDB不可用: No module named 'pymongo'
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 25, in get_mongodb_client
+    from pymongo import MongoClient
+ModuleNotFoundError: No module named 'pymongo'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 197, in save_account_snapshot
+    ensure_snapshot_storage_ready()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 67, in ensure_snapshot_storage_ready
+    latest = _latest_collection()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 52, in _latest_collection
+    db = get_mongodb_db()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 38, in get_mongodb_db
+    client = get_mongodb_client()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 31, in get_mongodb_client
+    raise Exception(f"MongoDB不可用: {str(e)}")
+Exception: MongoDB不可用: No module named 'pymongo'
+读取全部最新账户快照失败: MongoDB不可用: No module named 'pymongo'
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 25, in get_mongodb_client
+    from pymongo import MongoClient
+ModuleNotFoundError: No module named 'pymongo'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 262, in get_all_latest_account_states
+    ensure_snapshot_storage_ready()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 67, in ensure_snapshot_storage_ready
+    latest = _latest_collection()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 52, in _latest_collection
+    db = get_mongodb_db()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 38, in get_mongodb_db
+    client = get_mongodb_client()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 31, in get_mongodb_client
+    raise Exception(f"MongoDB不可用: {str(e)}")
+Exception: MongoDB不可用: No module named 'pymongo'
+[25/Apr/2026 14:02:42] "GET /api/account-info/?mock=false&source=mongodb HTTP/1.1" 200 149

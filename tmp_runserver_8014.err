@@ -1,0 +1,60 @@
+保存账户快照失败: MongoDB unavailable: 'ABCMeta' object is not subscriptable
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 31, in _import_mongo_client
+    from pymongo import MongoClient
+ModuleNotFoundError: No module named 'pymongo'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 60, in get_mongodb_client
+    MongoClient = _import_mongo_client()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 52, in _import_mongo_client
+    from pymongo import MongoClient
+  File "C:\Users\23669\AppData\Roaming\Python\Python313\site-packages\pymongo\__init__.py", line 89, in <module>
+    from pymongo import _csot
+  File "C:\Users\23669\AppData\Roaming\Python\Python313\site-packages\pymongo\_csot.py", line 71, in <module>
+    class _TimeoutContext(AbstractContextManager[Any]):
+TypeError: 'ABCMeta' object is not subscriptable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 197, in save_account_snapshot
+    ensure_snapshot_storage_ready()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 67, in ensure_snapshot_storage_ready
+    latest = _latest_collection()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 52, in _latest_collection
+    db = get_mongodb_db()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 73, in get_mongodb_db
+    client = get_mongodb_client()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 66, in get_mongodb_client
+    raise Exception(f'MongoDB unavailable: {str(e)}')
+Exception: MongoDB unavailable: 'ABCMeta' object is not subscriptable
+读取全部最新账户快照失败: MongoDB unavailable: 'ABCMeta' object is not subscriptable
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 60, in get_mongodb_client
+    MongoClient = _import_mongo_client()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 31, in _import_mongo_client
+    from pymongo import MongoClient
+  File "C:\Users\23669\AppData\Roaming\Python\Python313\site-packages\pymongo\__init__.py", line 89, in <module>
+    from pymongo import _csot
+  File "C:\Users\23669\AppData\Roaming\Python\Python313\site-packages\pymongo\_csot.py", line 71, in <module>
+    class _TimeoutContext(AbstractContextManager[Any]):
+TypeError: 'ABCMeta' object is not subscriptable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 262, in get_all_latest_account_states
+    ensure_snapshot_storage_ready()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 67, in ensure_snapshot_storage_ready
+    latest = _latest_collection()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\data_storage.py", line 52, in _latest_collection
+    db = get_mongodb_db()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 73, in get_mongodb_db
+    client = get_mongodb_client()
+  File "C:\Users\23669\OneDrive\Desktop\毕业设计\StockManager_Backendcode\apps\utils\db.py", line 66, in get_mongodb_client
+    raise Exception(f'MongoDB unavailable: {str(e)}')
+Exception: MongoDB unavailable: 'ABCMeta' object is not subscriptable
+[25/Apr/2026 14:11:05] "GET /api/account-info/?mock=false&source=mongodb HTTP/1.1" 200 149

@@ -43,7 +43,7 @@ def init_xtdatacenter_once():
             # 设置 token（优先使用运行时Token，否则使用settings中的Token）
             # from apps.utils.token_manager import get_xt_token
             # token = get_xt_token()
-            xtdc.set_token('166e6b61ab3356d5930e941f0d7de54a80aceb12')
+            xtdc.set_token(settings.XT_CONFIG['TOKEN'])
             logger.info('迅投Token已设置')
             
             # 设置连接池地址（从配置文件读取）

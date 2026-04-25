@@ -1,0 +1,14 @@
+Performing system checks...
+
+***** xtdata连接成功 2026-04-25 14:39:02*****
+服务信息: {'tag': 'sp3', 'version': '1.0'}
+服务地址: 127.0.0.1:58610
+数据路径: D:\GuoJin_2nd\国金QMT交易端模拟\bin.x64/../userdata_mini/datadir
+设置xtdata.enable_hello = False可隐藏此消息
+
+System check identified no issues (0 silenced).
+April 25, 2026 - 14:02:39
+Django version 4.2.27, using settings 'StockManager_Backendcode.settings'
+Starting development server at http://127.0.0.1:8012/
+Quit the server with CTRL-BREAK.
+

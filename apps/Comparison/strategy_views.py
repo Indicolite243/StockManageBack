@@ -122,22 +122,27 @@ def resolve_engine_type(selected_engine: str, script_content: str) -> str:
 @api_view(['GET'])
 def download_strategy_report(request):
     """
-    下载最新的策略报告Excel文件
+    下载本次回测生成的指定报告文件。
     API路径: /api/download-strategy-report/
     """
     try:
         etf_dir = os.path.abspath(os.path.join(settings.BASE_DIR, '..', 'ETF'))
-        logger.info(f">>> 正在 ETF 目录查找报告: {etf_dir}")
+        requested_path = (request.GET.get('path') or '').strip()
+        if not requested_path:
+            return JsonResponse({'status': 'error', 'message': '缺少报告文件路径参数'}, status=400)
 
-        excel_files = glob.glob(os.path.join(etf_dir, "ETF_strategy_trades_*.xlsx"))
-        if not excel_files:
-            return JsonResponse({'status': 'error', 'message': '未找到交易报告文件'}, status=404)
+        target_path = os.path.abspath(requested_path)
+        logger.info(f">>> 下载指定报告文件: {target_path}")
 
-        latest_file = max(excel_files, key=os.path.getmtime)
+        if not target_path.startswith(etf_dir):
+            return JsonResponse({'status': 'error', 'message': '报告文件路径不合法'}, status=400)
 
-        response = FileResponse(open(latest_file, 'rb'))
+        if not os.path.isfile(target_path):
+            return JsonResponse({'status': 'error', 'message': '本次回测的报告文件不存在或尚未生成'}, status=404)
+
+        response = FileResponse(open(target_path, 'rb'))
         response['Content-Type'] = 'application/octet-stream'
-        response['Content-Disposition'] = f'attachment; filename="{os.path.basename(latest_file)}"'
+        response['Content-Disposition'] = f'attachment; filename="{os.path.basename(target_path)}"'
         return response
     except Exception as e:
         logger.error(f"下载报告失败: {str(e)}")

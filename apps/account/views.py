@@ -6,9 +6,37 @@ from rest_framework.decorators import api_view
 from xtquant import xtdata
 from django.conf import settings
 from apps.utils.xt_trader import get_xt_trader_connection, create_stock_account
+from apps.utils.data_storage import (
+    get_account_history,
+    get_all_latest_account_states,
+    get_latest_account_state,
+    save_account_snapshot,
+)
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+
+def _parse_snapshot_time(snapshot_time):
+    if not snapshot_time:
+        return None
+    if isinstance(snapshot_time, datetime.datetime):
+        return snapshot_time
+    try:
+        return datetime.datetime.fromisoformat(str(snapshot_time))
+    except Exception:
+        return None
+
+
+def _is_snapshot_stale(snapshot_accounts, max_age_seconds=90):
+    latest_time = None
+    for account in snapshot_accounts or []:
+        parsed_time = _parse_snapshot_time(account.get('snapshot_time'))
+        if parsed_time and (latest_time is None or parsed_time > latest_time):
+            latest_time = parsed_time
+    if latest_time is None:
+        return True
+    return (datetime.datetime.now() - latest_time).total_seconds() > max_age_seconds
 
 
 def resolve_stock_name(stock_code):
@@ -28,104 +56,146 @@ def resolve_stock_name(stock_code):
     return str(stock_code)
 
 
+def normalize_data_source(requested_source: str, default: str = 'qmt') -> str:
+    source = (requested_source or default).strip().lower()
+    if source not in {'qmt', 'mongodb', 'auto'}:
+        source = default
+    return source
+
+
+def format_snapshot_accounts(snapshot_accounts):
+    account_list = []
+    for account in snapshot_accounts:
+        positions = account.get('positions', [])
+        total_asset = float(account.get('total_asset', 0) or 0)
+        initial_total_asset = 10000000
+        total_return_rate = ((total_asset - initial_total_asset) / initial_total_asset * 100) if initial_total_asset else 0
+        total_positions = sum(int(position.get('volume', 0) or 0) for position in positions)
+
+        account_list.append({
+            'account_id': str(account.get('account_id', '')),
+            'account_type': str(account.get('account_type', 'STOCK')),
+            'total_asset': total_asset,
+            'cash': float(account.get('cash', 0) or 0),
+            'frozen_cash': float(account.get('frozen_cash', 0) or 0),
+            'market_value': float(account.get('market_value', 0) or 0),
+            'positions': positions,
+            'total_return_rate': round(total_return_rate, 2),
+            'total_positions': total_positions,
+            'snapshot_time': account.get('snapshot_time'),
+        })
+
+    return account_list
+
+
+def build_snapshot_response(snapshot_accounts, source='mongodb_cache', fallback_reason=''):
+    formatted_accounts = format_snapshot_accounts(snapshot_accounts)
+    snapshot_time = next((item.get('snapshot_time') for item in formatted_accounts if item.get('snapshot_time')), None)
+    return {
+        'accounts': formatted_accounts,
+        'data_source': source,
+        'snapshot_time': snapshot_time,
+        'is_realtime': False,
+        'is_stale': True,
+        'fallback_reason': fallback_reason,
+    }
+
+
+def fetch_live_accounts_from_qmt():
+    xt_trader, connected = get_xt_trader_connection()
+    if not connected:
+        raise RuntimeError('连接交易接口失败')
+
+    accounts = xt_trader.query_account_infos()
+    account_list = []
+    for acc in accounts:
+        try:
+            raw_account_type = getattr(acc, 'account_type', 'STOCK')
+            if isinstance(raw_account_type, int):
+                if raw_account_type == 2:
+                    account_type = 'STOCK'
+                elif raw_account_type == 3:
+                    account_type = 'FUTURE'
+                else:
+                    account_type = 'STOCK'
+            else:
+                account_type = str(raw_account_type)
+
+            account_obj = create_stock_account(acc.account_id, account_type)
+            xt_trader.subscribe(account_obj)
+            asset = xt_trader.query_stock_asset(account_obj)
+            if asset is None:
+                continue
+
+            positions = xt_trader.query_stock_positions(account_obj)
+            pos_list = convert_positions(positions, asset.account_id)
+            account_data = {
+                'account_id': str(asset.account_id),
+                'account_type': str(asset.account_type) if hasattr(asset, 'account_type') else 'STOCK',
+                'total_asset': float(asset.total_asset),
+                'cash': float(asset.cash),
+                'frozen_cash': float(asset.frozen_cash),
+                'market_value': float(asset.market_value),
+                'positions': pos_list,
+            }
+            save_account_snapshot(asset.account_id, account_data, source='qmt_live')
+            account_list.append(account_data)
+        except Exception as e:
+            logger.error('处理账户 %s 时出错: %s', getattr(acc, 'account_id', 'unknown'), str(e), exc_info=True)
+
+    if not account_list:
+        raise RuntimeError('未查询到任何账户数据')
+
+    return {
+        'accounts': format_snapshot_accounts(account_list),
+        'data_source': 'qmt_live',
+        'snapshot_time': datetime.datetime.now().isoformat(timespec='seconds'),
+        'is_realtime': True,
+        'is_stale': False,
+    }
+
+
 @api_view(['GET'])
 def get_account_info(request):
     """
-    获取账户信息和持仓数据
-    API文档: /api/account-info/
-    支持模拟数据模式，通过查询参数 mock=true 启用
+    ????????????
+    API: /api/account-info/
+    ?? source=qmt|mongodb|auto
     """
-    # 检查是否使用模拟数据
     use_mock = request.GET.get('mock', 'false').lower() == 'true'
-    
     if use_mock:
-        logger.info('使用模拟数据模式')
+        logger.info('????????')
         return get_mock_account_info()
-    
+
+    source = normalize_data_source(request.GET.get('source'), default='qmt')
+    logger.info('??????, source=%s', source)
+
+    if source == 'mongodb':
+        snapshot_accounts = get_all_latest_account_states()
+        if snapshot_accounts:
+            return JsonResponse(build_snapshot_response(snapshot_accounts, source='mongodb_cache'))
+        return JsonResponse({
+            'success': True,
+            'accounts': [],
+            'data_source': 'mongodb_cache',
+            'snapshot_time': '',
+            'is_realtime': False,
+            'is_stale': True,
+            'fallback_reason': '',
+        })
+
     try:
-        logger.info('开始获取账户信息（真实数据）')
-        
-        # 使用统一的交易接口连接工具
-        xt_trader, connected = get_xt_trader_connection()
-        if not connected:
-            logger.error('连接交易接口失败')
-            # logger.info('自动切换到模拟数据模式')
-            # return get_mock_account_info()
-            return JsonResponse({'success': False, 'error': '连接交易接口失败', 'accounts': []}, status=503)
+        live_response = fetch_live_accounts_from_qmt()
+        return JsonResponse(live_response)
+    except Exception as live_error:
+        logger.warning('QMT ????????: %s', str(live_error))
+        snapshot_accounts = get_all_latest_account_states()
+        if snapshot_accounts:
+            return JsonResponse(build_snapshot_response(snapshot_accounts, source='mongodb_cache', fallback_reason=str(live_error)))
 
-        # 查询所有账户信息
-        accounts = xt_trader.query_account_infos()
-        logger.info(f'查询到 {len(accounts)} 个账户')
-        
-        account_list = []
-        for acc in accounts:
-            try:
-                # 兼容不同版本的 xtquant，确保 account_type 是字符串
-                raw_account_type = getattr(acc, 'account_type', 'STOCK')
-                if isinstance(raw_account_type, int):
-                    # 如果是整数，映射回字符串类型
-                    # 2: STOCK, 3: FUTURE (根据 xtquant 惯例，保守处理)
-                    if raw_account_type == 2:
-                        account_type = 'STOCK'
-                    elif raw_account_type == 3:
-                        account_type = 'FUTURE'
-                    else:
-                        account_type = 'STOCK'
-                else:
-                    account_type = str(raw_account_type)
-                
-                account_obj = create_stock_account(acc.account_id, account_type)
-                
-                # 订阅该账户的交易回调
-                subscribe_result = xt_trader.subscribe(account_obj)
-                
-                # 查询账户资产信息
-                asset = xt_trader.query_stock_asset(account_obj)
-                if asset is None:
-                    logger.warning(f'账户 {acc} 资产信息为空，跳过')
-                    continue
-                
-                # 查询该账户的持仓信息
-                positions = xt_trader.query_stock_positions(account_obj)
-                
-                # 转换持仓数据格式
-                pos_list = convert_positions(positions, asset.account_id)
-                
-                # 构建账户数据 - 符合前端数据格式要求
-                account_data = {
-                    'account_id': str(asset.account_id),
-                    'account_type': str(asset.account_type) if hasattr(asset, 'account_type') else 'STOCK',
-                    'total_asset': float(asset.total_asset),  # 总资产（前端要求字段名）
-                    'cash': float(asset.cash),  # 可用金额
-                    'frozen_cash': float(asset.frozen_cash),  # 冻结金额
-                    'market_value': float(asset.market_value),  # 持仓市值
-                    'positions': pos_list
-                }
-                
-                account_list.append(account_data)
-                logger.info(f'成功处理账户 {asset.account_id}，持仓数量: {len(pos_list)}')
-                
-                # 自动保存账户快照到数据库（用于历史数据查询）
-                try:
-                    from apps.utils.data_storage import save_account_snapshot
-                    save_account_snapshot(asset.account_id, account_data)
-                except Exception as e:
-                    logger.warning(f'保存账户快照失败: {str(e)}')
-                    # 不影响主流程，只记录警告
-                
-            except Exception as e:
-                logger.error(f'处理账户 {acc} 时出错: {str(e)}', exc_info=True)
-                continue
-
-        logger.info(f'成功返回 {len(account_list)} 个账户信息')
-        return JsonResponse({'accounts': account_list})
-        
-    except Exception as e:
-        logger.error(f'获取账户信息失败: {str(e)}', exc_info=True)
-        # logger.info('发生错误，自动切换到模拟数据模式')
-        # return get_mock_account_info()
-        return JsonResponse({'success': False, 'error': str(e), 'accounts': []}, status=500)
-
+        if source == 'auto':
+            return JsonResponse({'success': False, 'error': 'QMT ? MongoDB ????', 'accounts': []}, status=503)
+        return JsonResponse({'success': False, 'error': str(live_error), 'accounts': []}, status=503)
 
 def convert_positions(positions, account_id):
     """
@@ -577,127 +647,73 @@ def get_region_data(request):
 @api_view(['GET'])
 def get_time_data(request):
     """
-    获取时间序列数据
-    API文档: /api/time-data/
-    符合前端数据格式要求：返回时间序列数据
+    ?????????
+    ???? MongoDB ??????????????????
     """
-    logger.info('获取时间序列数据')
-    
-    # 获取参数
+    logger.info('????????')
+
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    use_mock = request.GET.get('mock', 'true').lower() == 'true'
-    
+    account_id = request.GET.get('account_id')
+    use_mock = request.GET.get('mock', 'false').lower() == 'true'
+
     if use_mock:
-        # 模拟数据 - 符合前端格式要求
         import random
         from datetime import timedelta
-        
-        # 如果没有指定日期，默认返回最近30天
+
         if not end_date:
             end_date = datetime.datetime.now().strftime('%Y-%m-%d')
         if not start_date:
             start_date = (datetime.datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-        
-        # 生成时间序列数据
+
         time_series = []
         current_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
         end_dt = datetime.datetime.strptime(end_date, '%Y-%m-%d')
         base_value = 3800000.00
-        
+
         while current_date <= end_dt:
-            # 添加随机波动
-            daily_change = random.uniform(-0.02, 0.02)  # -2% 到 +2%
+            daily_change = random.uniform(-0.02, 0.02)
             base_value = base_value * (1 + daily_change)
-            
-            # 计算回报率（简化计算）
             return_rate = (base_value - 3800000.00) / 3800000.00 * 100
-            
             time_series.append({
                 'date': current_date.strftime('%Y-%m-%d'),
                 'totalAssets': round(base_value, 2),
                 'returnRate': round(return_rate, 2)
             })
-            
             current_date += timedelta(days=1)
-        
-        return JsonResponse({
-            'time_series': time_series
-        })
-    
+
+        return JsonResponse({'time_series': time_series, 'data_source': 'mock', 'is_mock': True})
+
     try:
-        logger.info('开始获取时间序列数据（真实数据）')
-        
-        # 获取第一个账户ID（如果前端需要指定账户，可以添加account_id参数）
-        # 这里暂时使用数据库中的第一个账户
-        from apps.utils.data_storage import get_account_history
-        from apps.utils.db import get_mongodb_db
-        
-        # 如果没有指定账户，尝试从数据库获取最新的账户
-        db = get_mongodb_db()
-        
-        # 获取最新的账户快照，提取account_id
-        latest_snapshot = db.account_snapshots.find_one(sort=[('timestamp', -1)])
-        if not latest_snapshot:
-            logger.warning('未找到历史数据，返回模拟数据')
-            return JsonResponse({
-                'time_series': [
-                    {
-                        'date': datetime.datetime.now().strftime('%Y-%m-%d'),
-                        'totalAssets': 4100000.00,
-                        'returnRate': 8.0
-                    }
-                ]
-            })
-        
-        account_id = latest_snapshot.get('account_id')
-        
-        # 获取历史数据
+        if not account_id:
+            latest_snapshot = get_latest_account_state()
+            if not latest_snapshot:
+                return JsonResponse({'time_series': [], 'data_source': 'mongodb_history', 'is_mock': False})
+            account_id = latest_snapshot.get('account_id')
+
         history = get_account_history(account_id, start_date=start_date, end_date=end_date, days=30)
-        
         if not history:
-            logger.warning('未找到历史数据，返回模拟数据')
-            return JsonResponse({
-                'time_series': [
-                    {
-                        'date': datetime.datetime.now().strftime('%Y-%m-%d'),
-                        'totalAssets': 4100000.00,
-                        'returnRate': 8.0
-                    }
-                ]
-            })
-        
-        # 计算回报率（相对于第一天的资产）
-        if len(history) > 0:
-            initial_assets = history[0]['total_assets']
-        else:
-            initial_assets = 0
-        
+            return JsonResponse({'time_series': [], 'data_source': 'mongodb_history', 'is_mock': False, 'account_id': account_id})
+
+        initial_assets = history[0]['total_assets'] if history else 0
         time_series = []
         for record in history:
             current_assets = record['total_assets']
             return_rate = ((current_assets - initial_assets) / initial_assets * 100) if initial_assets > 0 else 0
-            
             time_series.append({
                 'date': record['date'],
                 'totalAssets': round(current_assets, 2),
                 'returnRate': round(return_rate, 2)
             })
-        
-        logger.info(f'成功获取 {len(time_series)} 条时间序列数据')
+
         return JsonResponse({
-            'time_series': time_series
+            'time_series': time_series,
+            'data_source': 'mongodb_history',
+            'is_mock': False,
+            'account_id': account_id,
+            'snapshot_time': history[-1].get('snapshot_time') if history else None,
+            'period_days_available': len(history),
         })
-        
     except Exception as e:
-        logger.error(f'获取时间序列数据失败: {str(e)}', exc_info=True)
-        # 发生错误时返回模拟数据
-        return JsonResponse({
-            'time_series': [
-                {
-                    'date': datetime.datetime.now().strftime('%Y-%m-%d'),
-                    'totalAssets': 4100000.00,
-                    'returnRate': 8.0
-                }
-            ]
-        })
+        logger.error('??????????: %s', str(e), exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e), 'time_series': []}, status=500)
