@@ -1,9 +1,9 @@
-import os
+﻿import os
 import logging
 import sys
 import threading
 import time
-from typing import Dict, Any
+from typing import Any, Dict
 
 from django.conf import settings
 
@@ -32,7 +32,6 @@ def should_start_snapshot_scheduler() -> bool:
     command = sys.argv[1] if len(sys.argv) > 1 else ''
     if command in SKIP_COMMANDS:
         return False
-
     if command and command != 'runserver':
         return False
 
@@ -44,11 +43,11 @@ def should_start_snapshot_scheduler() -> bool:
 
 
 def sync_qmt_snapshots_once() -> Dict[str, Any]:
-    from apps.account.views import fetch_live_accounts_from_qmt
+    from apps.account.views_runtime import fetch_live_accounts_from_qmt
 
     response = fetch_live_accounts_from_qmt()
     accounts = response.get('accounts', [])
-    logger.info('QMT ??????????: %s, ??: %s', len(accounts), response.get('snapshot_time'))
+    logger.info('QMT 快照同步完成: %s 个账户, 时间: %s', len(accounts), response.get('snapshot_time'))
     return response
 
 

@@ -1,4 +1,4 @@
-import time
+﻿import time
 import datetime
 import logging
 from django.http import JsonResponse
@@ -13,7 +13,7 @@ from apps.utils.data_storage import (
     save_account_snapshot,
 )
 
-# 配置日志
+# 閰嶇疆鏃ュ織
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +51,7 @@ def resolve_stock_name(stock_code):
         if detail:
             return getattr(detail, 'InstrumentName', None) or getattr(detail, 'instrument_name', None) or str(stock_code)
     except Exception as e:
-        logger.warning(f'获取股票 {stock_code} 名称失败: {str(e)}')
+        logger.warning(f'鑾峰彇鑲＄エ {stock_code} 鍚嶇О澶辫触: {str(e)}')
 
     return str(stock_code)
 
@@ -104,7 +104,7 @@ def build_snapshot_response(snapshot_accounts, source='mongodb_cache', fallback_
 def fetch_live_accounts_from_qmt():
     xt_trader, connected = get_xt_trader_connection()
     if not connected:
-        raise RuntimeError('连接交易接口失败')
+        raise RuntimeError('杩炴帴浜ゆ槗鎺ュ彛澶辫触')
 
     accounts = xt_trader.query_account_infos()
     account_list = []
@@ -141,10 +141,10 @@ def fetch_live_accounts_from_qmt():
             save_account_snapshot(asset.account_id, account_data, source='qmt_live')
             account_list.append(account_data)
         except Exception as e:
-            logger.error('处理账户 %s 时出错: %s', getattr(acc, 'account_id', 'unknown'), str(e), exc_info=True)
+            logger.error('澶勭悊璐︽埛 %s 鏃跺嚭閿? %s', getattr(acc, 'account_id', 'unknown'), str(e), exc_info=True)
 
     if not account_list:
-        raise RuntimeError('未查询到任何账户数据')
+        raise RuntimeError('鏈煡璇㈠埌浠讳綍璐︽埛鏁版嵁')
 
     return {
         'accounts': format_snapshot_accounts(account_list),
@@ -199,90 +199,90 @@ def get_account_info(request):
 
 def convert_positions(positions, account_id):
     """
-    转换持仓数据为前端需要的格式
-    - 数据类型转换（避免序列化错误）
-    - 按市值降序排序
-    - 返回前10条记录
+    杞崲鎸佷粨鏁版嵁涓哄墠绔渶瑕佺殑鏍煎紡
+    - 鏁版嵁绫诲瀷杞崲锛堥伩鍏嶅簭鍒楀寲閿欒锛?
+    - 鎸夊競鍊奸檷搴忔帓搴?
+    - 杩斿洖鍓?0鏉¤褰?
     """
     if not positions:
         return []
     
     pos_list = []
     
-    # 获取所有持仓的股票代码列表
+    # 鑾峰彇鎵€鏈夋寔浠撶殑鑲＄エ浠ｇ爜鍒楄〃
     stock_codes = [pos.stock_code for pos in positions]
     
-    # 批量获取实时行情数据以显示当前价格
-    # 注意：xtdata 需要在 MiniQMT 运行时才能获取数据
+    # 鎵归噺鑾峰彇瀹炴椂琛屾儏鏁版嵁浠ユ樉绀哄綋鍓嶄环鏍?
+    # 娉ㄦ剰锛歺tdata 闇€瑕佸湪 MiniQMT 杩愯鏃舵墠鑳借幏鍙栨暟鎹?
     current_prices = {}
     try:
-        logger.info(f'尝试获取实时行情，股票列表: {stock_codes}')
-        # 订阅这些股票的行情（确保数据是最新的）
-        # 使用 'tick' 周期订阅实时行情
+        logger.info(f'灏濊瘯鑾峰彇瀹炴椂琛屾儏锛岃偂绁ㄥ垪琛? {stock_codes}')
+        # 璁㈤槄杩欎簺鑲＄エ鐨勮鎯咃紙纭繚鏁版嵁鏄渶鏂扮殑锛?
+        # 浣跨敤 'tick' 鍛ㄦ湡璁㈤槄瀹炴椂琛屾儏
         for code in stock_codes:
             xtdata.subscribe_quote(code, period='1d', start_time='', end_time='', count=0, callback=None)
         
-        # 获取全推数据
+        # 鑾峰彇鍏ㄦ帹鏁版嵁
         ticks = xtdata.get_full_tick(stock_codes)
         if ticks:
             for code, tick in ticks.items():
                 if tick and 'lastPrice' in tick:
                     price = tick['lastPrice']
-                    # 过滤掉价格为0的无效数据（停牌或未开盘可能导致0）
+                    # 杩囨护鎺変环鏍间负0鐨勬棤鏁堟暟鎹紙鍋滅墝鎴栨湭寮€鐩樺彲鑳藉鑷?锛?
                     if price > 0:
                         current_prices[code] = price
             logger.info(f'成功获取实时行情: {len(current_prices)} 只股票')
         else:
-            logger.warning('获取到的 tick 数据为空')
+            logger.warning('鑾峰彇鍒扮殑 tick 鏁版嵁涓虹┖')
             
     except Exception as e:
-        logger.warning(f'获取实时行情失败: {str(e)}')
+        logger.warning(f'鑾峰彇瀹炴椂琛屾儏澶辫触: {str(e)}')
 
     for pos in positions:
         try:
-            # 确定当前价格：优先使用实时行情，否则通过市值/数量计算，最后使用开仓价兜底
+            # 纭畾褰撳墠浠锋牸锛氫紭鍏堜娇鐢ㄥ疄鏃惰鎯咃紝鍚﹀垯閫氳繃甯傚€?鏁伴噺璁＄畻锛屾渶鍚庝娇鐢ㄥ紑浠撲环鍏滃簳
             current_price = 0.0
             if pos.stock_code in current_prices:
                 current_price = current_prices[pos.stock_code]
             elif pos.volume > 0 and hasattr(pos, 'market_value'):
-                # 如果没有实时行情，尝试用 市值/数量 计算隐含价格
+                # 濡傛灉娌℃湁瀹炴椂琛屾儏锛屽皾璇曠敤 甯傚€?鏁伴噺 璁＄畻闅愬惈浠锋牸
                 current_price = pos.market_value / pos.volume
             elif hasattr(pos, 'open_price'):
                 current_price = pos.open_price
 
-            # 确保所有数值类型正确转换
+            # 纭繚鎵€鏈夋暟鍊肩被鍨嬫纭浆鎹?
             pos_data = {
                 'account_id': str(account_id),
                 'account_type': str(pos.account_type) if hasattr(pos, 'account_type') else 'STOCK',
-                'stock_code': str(pos.stock_code),  # 股票代码，如 "600000.SH"
-                'stock_name': resolve_stock_name(pos.stock_code),  # 股票名称
-                'volume': int(pos.volume),  # 持仓数量
-                'can_use_volume': int(pos.can_use_volume),  # 可用数量
-                'open_price': round(float(current_price), 2),  # 当前价格（修正为实时行情价格）
-                'market_value': float(pos.market_value),  # 市值
-                'frozen_volume': int(pos.frozen_volume) if hasattr(pos, 'frozen_volume') and pos.frozen_volume else 0,  # 冻结数量
-                'on_road_volume': int(pos.on_road_volume) if hasattr(pos, 'on_road_volume') and pos.on_road_volume else 0,  # 在途股份
-                'yesterday_volume': int(pos.yesterday_volume) if hasattr(pos, 'yesterday_volume') else 0,  # 昨日持仓
-                'avg_price': round(float(pos.open_price), 2) if hasattr(pos, 'open_price') else 0.0,  # 成本价（修正为使用open_price作为成本价）
+                'stock_code': str(pos.stock_code),  # 鑲＄エ浠ｇ爜锛屽 "600000.SH"
+                'stock_name': resolve_stock_name(pos.stock_code),  # 鑲＄エ鍚嶇О
+                'volume': int(pos.volume),  # 鎸佷粨鏁伴噺
+                'can_use_volume': int(pos.can_use_volume),  # 鍙敤鏁伴噺
+                'open_price': round(float(current_price), 2),  # 褰撳墠浠锋牸锛堜慨姝ｄ负瀹炴椂琛屾儏浠锋牸锛?
+                'market_value': float(pos.market_value),  # 甯傚€?
+                'frozen_volume': int(pos.frozen_volume) if hasattr(pos, 'frozen_volume') and pos.frozen_volume else 0,  # 鍐荤粨鏁伴噺
+                'on_road_volume': int(pos.on_road_volume) if hasattr(pos, 'on_road_volume') and pos.on_road_volume else 0,  # 鍦ㄩ€旇偂浠?
+                'yesterday_volume': int(pos.yesterday_volume) if hasattr(pos, 'yesterday_volume') else 0,  # 鏄ㄦ棩鎸佷粨
+                'avg_price': round(float(pos.open_price), 2) if hasattr(pos, 'open_price') else 0.0,  # 鎴愭湰浠凤紙淇涓轰娇鐢╫pen_price浣滀负鎴愭湰浠凤級
             }
             pos_list.append(pos_data)
         except Exception as e:
-            logger.error(f'转换持仓数据失败 {getattr(pos, "stock_code", "unknown")}: {str(e)}')
+            logger.error(f'杞崲鎸佷粨鏁版嵁澶辫触 {getattr(pos, "stock_code", "unknown")}: {str(e)}')
             continue
     
-    # 按市值降序排序
+    # 鎸夊競鍊奸檷搴忔帓搴?
     pos_list.sort(key=lambda x: x['market_value'], reverse=True)
     
-    # 返回前10条（前端需求）
-    return pos_list[:10]
+    # 杩斿洖鍓?0鏉★紙鍓嶇闇€姹傦級
+    return pos_list
 
 
 def get_mock_account_info():
     """
-    返回模拟账户数据
-    用于测试和演示，当迅投连接不可用时自动使用
+    杩斿洖妯℃嫙璐︽埛鏁版嵁
+    鐢ㄤ簬娴嬭瘯鍜屾紨绀猴紝褰撹繀鎶曡繛鎺ヤ笉鍙敤鏃惰嚜鍔ㄤ娇鐢?
     """
-    logger.info('返回模拟账户数据')
+    logger.info('杩斿洖妯℃嫙璐︽埛鏁版嵁')
     
     mock_data = {
         'accounts': [
@@ -298,7 +298,7 @@ def get_mock_account_info():
                         'account_id': 'DEMO000001',
                         'account_type': 'STOCK',
                         'stock_code': '600519.SH',
-                        'stock_name': '贵州茅台',
+                        'stock_name': '璐靛窞鑼呭彴',
                         'volume': 500,
                         'can_use_volume': 500,
                         'open_price': 1680.50,
@@ -312,7 +312,7 @@ def get_mock_account_info():
                         'account_id': 'DEMO000001',
                         'account_type': 'STOCK',
                         'stock_code': '600036.SH',
-                        'stock_name': '招商银行',
+                        'stock_name': '鎷涘晢閾惰',
                         'volume': 20000,
                         'can_use_volume': 20000,
                         'open_price': 35.80,
@@ -326,7 +326,7 @@ def get_mock_account_info():
                         'account_id': 'DEMO000001',
                         'account_type': 'STOCK',
                         'stock_code': '601318.SH',
-                        'stock_name': '中国平安',
+                        'stock_name': '涓浗骞冲畨',
                         'volume': 15000,
                         'can_use_volume': 15000,
                         'open_price': 42.50,
@@ -354,7 +354,7 @@ def get_mock_account_info():
                         'account_id': 'DEMO000001',
                         'account_type': 'STOCK',
                         'stock_code': '000001.SZ',
-                        'stock_name': '平安银行',
+                        'stock_name': '骞冲畨閾惰',
                         'volume': 8000,
                         'can_use_volume': 8000,
                         'open_price': 12.50,
@@ -368,7 +368,7 @@ def get_mock_account_info():
                         'account_id': 'DEMO000001',
                         'account_type': 'STOCK',
                         'stock_code': '600887.SH',
-                        'stock_name': '伊利股份',
+                        'stock_name': '浼婂埄鑲′唤',
                         'volume': 2500,
                         'can_use_volume': 2500,
                         'open_price': 28.90,
@@ -382,7 +382,7 @@ def get_mock_account_info():
                         'account_id': 'DEMO000001',
                         'account_type': 'STOCK',
                         'stock_code': '601012.SH',
-                        'stock_name': '隆基绿能',
+                        'stock_name': '闅嗗熀缁胯兘',
                         'volume': 1200,
                         'can_use_volume': 1200,
                         'open_price': 18.30,
@@ -396,7 +396,7 @@ def get_mock_account_info():
                         'account_id': 'DEMO000001',
                         'account_type': 'STOCK',
                         'stock_code': '300750.SZ',
-                        'stock_name': '宁德时代',
+                        'stock_name': '瀹佸痉鏃朵唬',
                         'volume': 100,
                         'can_use_volume': 100,
                         'open_price': 165.80,
@@ -417,27 +417,27 @@ def get_mock_account_info():
 @api_view(['GET'])
 def get_asset_category(request):
     """
-    获取资产分类数据
-    API文档: /api/asset-category/
-    根据股票所属行业/板块进行分类统计
-    符合前端数据格式要求：使用categories字段，category和totalAssets字段名
+    鑾峰彇璧勪骇鍒嗙被鏁版嵁
+    API鏂囨。: /api/asset-category/
+    鏍规嵁鑲＄エ鎵€灞炶涓?鏉垮潡杩涜鍒嗙被缁熻
+    绗﹀悎鍓嶇鏁版嵁鏍煎紡瑕佹眰锛氫娇鐢╟ategories瀛楁锛宑ategory鍜宼otalAssets瀛楁鍚?
     """
-    logger.info('获取资产分类数据')
+    logger.info('鑾峰彇璧勪骇鍒嗙被鏁版嵁')
     
-    # 检查是否使用模拟数据
+    # 妫€鏌ユ槸鍚︿娇鐢ㄦā鎷熸暟鎹?
     use_mock = request.GET.get('mock', 'true').lower() == 'true'
     
     if use_mock:
-        # 模拟数据 - 符合前端格式要求
+        # 妯℃嫙鏁版嵁 - 绗﹀悎鍓嶇鏍煎紡瑕佹眰
         category_data = {
-            'categories': [  # 前端要求使用categories字段
+            'categories': [  # 鍓嶇瑕佹眰浣跨敤categories瀛楁
                 {
-                    'category': '股票',  # 前端要求使用category字段
-                    'totalAssets': 2850000.00,  # 前端要求使用totalAssets字段
+                    'category': '鑲＄エ',  # 鍓嶇瑕佹眰浣跨敤category瀛楁
+                    'totalAssets': 2850000.00,  # 鍓嶇瑕佹眰浣跨敤totalAssets瀛楁
                     'percentage': 69.51
                 },
                 {
-                    'category': '现金',
+                    'category': '鐜伴噾',
                     'totalAssets': 1250000.00,
                     'percentage': 30.49
                 }
@@ -446,32 +446,32 @@ def get_asset_category(request):
         return JsonResponse(category_data)
     
     try:
-        logger.info('开始获取资产分类数据（真实数据）')
+        logger.info('寮€濮嬭幏鍙栬祫浜у垎绫绘暟鎹紙鐪熷疄鏁版嵁锛?)
         
-        # 使用统一的交易接口连接工具
+        # 浣跨敤缁熶竴鐨勪氦鏄撴帴鍙ｈ繛鎺ュ伐鍏?
         xt_trader, connected = get_xt_trader_connection()
         if not connected:
-            logger.error('连接交易接口失败')
-            logger.info('自动切换到模拟数据模式')
+            logger.error('杩炴帴浜ゆ槗鎺ュ彛澶辫触')
+            logger.info('鑷姩鍒囨崲鍒版ā鎷熸暟鎹ā寮?)
             return JsonResponse({
                 'categories': [
-                    {'category': '股票', 'totalAssets': 2850000.00, 'percentage': 69.51},
-                    {'category': '现金', 'totalAssets': 1250000.00, 'percentage': 30.49}
+                    {'category': '鑲＄エ', 'totalAssets': 2850000.00, 'percentage': 69.51},
+                    {'category': '鐜伴噾', 'totalAssets': 1250000.00, 'percentage': 30.49}
                 ]
             })
 
-        # 查询所有账户信息
+        # 鏌ヨ鎵€鏈夎处鎴蜂俊鎭?
         accounts = xt_trader.query_account_infos()
         if not accounts:
-            logger.warning('未查询到账户信息')
+            logger.warning('鏈煡璇㈠埌璐︽埛淇℃伅')
             return JsonResponse({
                 'categories': [
-                    {'category': '股票', 'totalAssets': 0.00, 'percentage': 0.00},
-                    {'category': '现金', 'totalAssets': 0.00, 'percentage': 0.00}
+                    {'category': '鑲＄エ', 'totalAssets': 0.00, 'percentage': 0.00},
+                    {'category': '鐜伴噾', 'totalAssets': 0.00, 'percentage': 0.00}
                 ]
             })
 
-        # 汇总所有账户的数据
+        # 姹囨€绘墍鏈夎处鎴风殑鏁版嵁
         total_market_value = 0.0
         total_cash = 0.0
         
@@ -483,25 +483,25 @@ def get_asset_category(request):
                     total_market_value += float(asset.market_value)
                     total_cash += float(asset.cash)
             except Exception as e:
-                logger.warning(f'处理账户 {acc} 时出错: {str(e)}')
+                logger.warning(f'澶勭悊璐︽埛 {acc} 鏃跺嚭閿? {str(e)}')
                 continue
         
         total_assets = total_market_value + total_cash
         
-        # 计算占比
+        # 璁＄畻鍗犳瘮
         stock_percentage = (total_market_value / total_assets * 100) if total_assets > 0 else 0
         cash_percentage = (total_cash / total_assets * 100) if total_assets > 0 else 0
         
-        logger.info(f'成功获取资产分类数据：股票 {total_market_value:.2f}，现金 {total_cash:.2f}')
+        logger.info(f'鎴愬姛鑾峰彇璧勪骇鍒嗙被鏁版嵁锛氳偂绁?{total_market_value:.2f}锛岀幇閲?{total_cash:.2f}')
         return JsonResponse({
             'categories': [
                 {
-                    'category': '股票',
+                    'category': '鑲＄エ',
                     'totalAssets': round(total_market_value, 2),
                     'percentage': round(stock_percentage, 2)
                 },
                 {
-                    'category': '现金',
+                    'category': '鐜伴噾',
                     'totalAssets': round(total_cash, 2),
                     'percentage': round(cash_percentage, 2)
                 }
@@ -509,12 +509,12 @@ def get_asset_category(request):
         })
         
     except Exception as e:
-        logger.error(f'获取资产分类数据失败: {str(e)}', exc_info=True)
-        # 发生错误时返回模拟数据
+        logger.error(f'鑾峰彇璧勪骇鍒嗙被鏁版嵁澶辫触: {str(e)}', exc_info=True)
+        # 鍙戠敓閿欒鏃惰繑鍥炴ā鎷熸暟鎹?
         return JsonResponse({
             'categories': [
-                {'category': '股票', 'totalAssets': 2850000.00, 'percentage': 69.51},
-                {'category': '现金', 'totalAssets': 1250000.00, 'percentage': 30.49}
+                {'category': '鑲＄エ', 'totalAssets': 2850000.00, 'percentage': 69.51},
+                {'category': '鐜伴噾', 'totalAssets': 1250000.00, 'percentage': 30.49}
             ]
         })
 
@@ -522,47 +522,47 @@ def get_asset_category(request):
 @api_view(['GET'])
 def get_region_data(request):
     """
-    获取地区分布数据
-    API文档: /api/region-data/
-    根据股票上市地区进行统计
-    符合前端数据格式要求：使用regions字段，region和totalAssets字段名
+    鑾峰彇鍦板尯鍒嗗竷鏁版嵁
+    API鏂囨。: /api/region-data/
+    鏍规嵁鑲＄エ涓婂競鍦板尯杩涜缁熻
+    绗﹀悎鍓嶇鏁版嵁鏍煎紡瑕佹眰锛氫娇鐢╮egions瀛楁锛宺egion鍜宼otalAssets瀛楁鍚?
     """
-    logger.info('获取地区分布数据')
+    logger.info('鑾峰彇鍦板尯鍒嗗竷鏁版嵁')
     
-    # 检查是否使用模拟数据
+    # 妫€鏌ユ槸鍚︿娇鐢ㄦā鎷熸暟鎹?
     use_mock = request.GET.get('mock', 'true').lower() == 'true'
     
     if use_mock:
-        # 模拟数据 - 符合前端格式要求
+        # 妯℃嫙鏁版嵁 - 绗﹀悎鍓嶇鏍煎紡瑕佹眰
         region_data = {
-            'regions': [  # 前端要求使用regions字段
+            'regions': [  # 鍓嶇瑕佹眰浣跨敤regions瀛楁
                 {
-                    'region': '上海',  # 前端要求使用region字段
-                    'totalAssets': 1353500.00,  # 前端要求使用totalAssets字段
+                    'region': '涓婃捣',  # 鍓嶇瑕佹眰浣跨敤region瀛楁
+                    'totalAssets': 1353500.00,  # 鍓嶇瑕佹眰浣跨敤totalAssets瀛楁
                     'percentage': 28.77
                 },
                 {
-                    'region': '深圳',
+                    'region': '娣卞湷',
                     'totalAssets': 712500.00,
                     'percentage': 25.00
                 },
                 {
-                    'region': '北京',
+                    'region': '鍖椾含',
                     'totalAssets': 570000.00,
                     'percentage': 20.00
                 },
                 {
-                    'region': '广州',
+                    'region': '骞垮窞',
                     'totalAssets': 342000.00,
                     'percentage': 12.00
                 },
                 {
-                    'region': '杭州',
+                    'region': '鏉窞',
                     'totalAssets': 228000.00,
                     'percentage': 8.00
                 },
                 {
-                    'region': '其他',
+                    'region': '鍏朵粬',
                     'totalAssets': 177500.00,
                     'percentage': 6.23
                 }
@@ -571,29 +571,29 @@ def get_region_data(request):
         return JsonResponse(region_data)
     
     try:
-        logger.info('开始获取地区分布数据（真实数据）')
+        logger.info('寮€濮嬭幏鍙栧湴鍖哄垎甯冩暟鎹紙鐪熷疄鏁版嵁锛?)
         
-        # 使用统一的交易接口连接工具
+        # 浣跨敤缁熶竴鐨勪氦鏄撴帴鍙ｈ繛鎺ュ伐鍏?
         xt_trader, connected = get_xt_trader_connection()
         if not connected:
-            logger.error('连接交易接口失败')
-            logger.info('自动切换到模拟数据模式')
+            logger.error('杩炴帴浜ゆ槗鎺ュ彛澶辫触')
+            logger.info('鑷姩鍒囨崲鍒版ā鎷熸暟鎹ā寮?)
             return JsonResponse({
                 'regions': [
-                    {'region': '上海', 'totalAssets': 1353500.00, 'percentage': 28.77}
+                    {'region': '涓婃捣', 'totalAssets': 1353500.00, 'percentage': 28.77}
                 ]
             })
 
-        # 查询所有账户信息
+        # 鏌ヨ鎵€鏈夎处鎴蜂俊鎭?
         accounts = xt_trader.query_account_infos()
         if not accounts:
-            logger.warning('未查询到账户信息')
+            logger.warning('鏈煡璇㈠埌璐︽埛淇℃伅')
             return JsonResponse({'regions': []})
 
-        # 获取股票地区信息
+        # 鑾峰彇鑲＄エ鍦板尯淇℃伅
         from apps.utils.stock_info import get_stock_region
         
-        # 按地区汇总
+        # 鎸夊湴鍖烘眹鎬?
         region_data_dict = {}
         total_market_value = 0.0
         
@@ -613,10 +613,10 @@ def get_region_data(request):
                         region_data_dict[region] += market_value
                         total_market_value += market_value
             except Exception as e:
-                logger.warning(f'处理账户 {acc} 时出错: {str(e)}')
+                logger.warning(f'澶勭悊璐︽埛 {acc} 鏃跺嚭閿? {str(e)}')
                 continue
         
-        # 计算占比并转换为列表
+        # 璁＄畻鍗犳瘮骞惰浆鎹负鍒楄〃
         region_list = []
         for region, assets in region_data_dict.items():
             percentage = (assets / total_market_value * 100) if total_market_value > 0 else 0
@@ -626,20 +626,20 @@ def get_region_data(request):
                 'percentage': round(percentage, 2)
             })
         
-        # 按总资产降序排序
+        # 鎸夋€昏祫浜ч檷搴忔帓搴?
         region_list.sort(key=lambda x: x['totalAssets'], reverse=True)
         
-        logger.info(f'成功获取 {len(region_list)} 个地区的数据')
+        logger.info(f'鎴愬姛鑾峰彇 {len(region_list)} 涓湴鍖虹殑鏁版嵁')
         return JsonResponse({
             'regions': region_list
         })
         
     except Exception as e:
-        logger.error(f'获取地区分布数据失败: {str(e)}', exc_info=True)
-        # 发生错误时返回模拟数据
+        logger.error(f'鑾峰彇鍦板尯鍒嗗竷鏁版嵁澶辫触: {str(e)}', exc_info=True)
+        # 鍙戠敓閿欒鏃惰繑鍥炴ā鎷熸暟鎹?
         return JsonResponse({
             'regions': [
-                {'region': '上海', 'totalAssets': 1353500.00, 'percentage': 28.77}
+                {'region': '涓婃捣', 'totalAssets': 1353500.00, 'percentage': 28.77}
             ]
         })
 
@@ -717,3 +717,6 @@ def get_time_data(request):
     except Exception as e:
         logger.error('??????????: %s', str(e), exc_info=True)
         return JsonResponse({'success': False, 'error': str(e), 'time_series': []}, status=500)
+
+
+

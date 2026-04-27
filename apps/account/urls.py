@@ -1,6 +1,5 @@
-# myapp/urls.py
-from django.urls import path
-from .views import get_account_info, get_asset_category, get_region_data, get_time_data
+﻿from django.urls import path
+from .views_runtime import get_account_info, get_asset_category, get_region_data, get_time_data
 
 urlpatterns = [
     path('account-info/', get_account_info, name='account_info'),
@@ -8,4 +7,3 @@ urlpatterns = [
     path('region-data/', get_region_data, name='region_data'),
     path('time-data/', get_time_data, name='time_data'),
 ]
-
