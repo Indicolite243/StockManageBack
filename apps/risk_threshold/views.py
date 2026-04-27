@@ -190,6 +190,8 @@ def get_risk_assessment(request):
     logger.info('收到风险评估请求')
     account_id = request.GET.get('account_id')
     days = int(request.GET.get('days', 30))
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
     use_mock = request.GET.get('mock', 'false').lower() == 'true'
 
     if not account_id:
@@ -199,7 +201,17 @@ def get_risk_assessment(request):
     if not account_id:
         return JsonResponse({'success': False, 'error': {'code': 'MISSING_PARAMETER', 'message': '缺少 account_id 参数'}}, status=400)
 
-    history, is_mock, data_source = get_history_for_risk(account_id, days=days, allow_mock=use_mock or True)
+    if start_date or end_date:
+        history = get_account_history(account_id, start_date=start_date, end_date=end_date)
+        is_mock = False
+        data_source = 'mongodb_history'
+        if not history and (use_mock or True):
+            history = get_mock_account_history(days)
+            is_mock = True
+            data_source = 'mock'
+    else:
+        history, is_mock, data_source = get_history_for_risk(account_id, days=days, allow_mock=use_mock or True)
+
     if not history:
         return JsonResponse({'success': False, 'error': {'code': 'NO_HISTORY', 'message': 'MongoDB 中暂无可用历史快照'}}, status=404)
 
@@ -232,6 +244,8 @@ def get_risk_assessment(request):
         'assessment_date': datetime.now().strftime('%Y-%m-%d'),
         'period_days': days,
         'period_days_available': len(history),
+        'range_start': history[0].get('date') if history else start_date,
+        'range_end': history[-1].get('date') if history else end_date,
         'data_source': data_source,
         'snapshot_time': history[-1].get('snapshot_time') if history else None,
         'is_mock': is_mock,
