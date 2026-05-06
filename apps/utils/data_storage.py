@@ -110,6 +110,8 @@ def _normalize_positions(positions: Optional[List[Dict[str, Any]]]) -> List[Dict
         normalized.append({
             'stock_code': str(position.get('stock_code', '')),
             'stock_name': str(position.get('stock_name', '')),
+            'industry': str(position.get('industry', '')),
+            'instrument_type': str(position.get('instrument_type', '')),
             'volume': int(position.get('volume', 0) or 0),
             'can_use_volume': int(position.get('can_use_volume', 0) or 0),
             'current_price': float(position.get('current_price', position.get('open_price', 0)) or 0),

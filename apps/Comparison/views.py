@@ -613,20 +613,31 @@ def asset_comparison(request):
         positions = snapshot.get('positions', [])
         total_market_value = float(snapshot.get('market_value', 0) or 0)
         pos_list = []
+        try:
+            from apps.utils.stock_info import get_instrument_metadata
+        except Exception:
+            def get_instrument_metadata(_stock_code, stock_name='', allow_remote=False):
+                return {'industry': '', 'instrument_type': ''}
         for position in positions:
+            stock_code = position.get('stock_code', '')
+            stock_name = position.get('stock_name') or stock_code
             market_value = float(position.get('market_value', 0) or 0)
             current_price = float(position.get('current_price', position.get('open_price', 0)) or 0)
             cost_price = float(position.get('cost_price', position.get('avg_price', 0)) or 0)
             asset_ratio = (market_value / total_market_value * 100) if total_market_value > 0 else 0
             profit_loss_rate = ((current_price - cost_price) / cost_price * 100) if cost_price > 0 else 0
+            metadata = get_instrument_metadata(stock_code, stock_name=stock_name, allow_remote=False) or {}
+            industry = position.get('industry') or metadata.get('industry') or '未分类'
+            instrument_type = position.get('instrument_type') or metadata.get('instrument_type') or 'STOCK'
             pos_list.append({
-                'stock_code': position.get('stock_code', ''),
-                'stock_name': position.get('stock_name') or position.get('stock_code', ''),
+                'stock_code': stock_code,
+                'stock_name': stock_name,
                 'market_value': round(market_value, 2),
                 'volume': int(position.get('volume', 0) or 0),
                 'current_price': round(current_price, 2),
                 'cost_price': round(cost_price, 2),
-                'industry': '',
+                'industry': industry,
+                'instrument_type': instrument_type,
                 'asset_ratio': round(asset_ratio, 2),
                 'percentage': round(asset_ratio, 2),
                 'daily_return': round(profit_loss_rate, 2),
@@ -677,7 +688,7 @@ def asset_comparison(request):
         for stock_code in stock_codes:
             stock_names[stock_code] = resolve_stock_name(stock_code)
 
-        from apps.utils.stock_info import get_stock_industry
+        from apps.utils.stock_info import get_instrument_metadata
 
         pos_list = []
         total_market_value = float(asset.market_value)
@@ -686,7 +697,9 @@ def asset_comparison(request):
             stock_code = pos.stock_code
             stock_name = stock_names.get(stock_code, stock_code)
             market_value = float(pos.market_value)
-            industry = get_stock_industry(stock_code)
+            metadata = get_instrument_metadata(stock_code, stock_name=stock_name, allow_remote=False) or {}
+            industry = metadata.get('industry') or '未分类'
+            instrument_type = metadata.get('instrument_type') or 'STOCK'
             volume = int(pos.volume)
             cost_price = float(pos.open_price) if hasattr(pos, 'open_price') else 0.0
             current_price = market_value / volume if volume > 0 else cost_price
@@ -701,6 +714,7 @@ def asset_comparison(request):
                 'current_price': round(current_price, 2),
                 'cost_price': round(cost_price, 2),
                 'industry': industry,
+                'instrument_type': instrument_type,
                 'asset_ratio': round(asset_ratio, 2),
                 'percentage': round(asset_ratio, 2),
                 'daily_return': round(profit_loss_rate, 2),
@@ -717,6 +731,8 @@ def asset_comparison(request):
                 'avg_price': round(cost_price, 2),
                 'cost_price': round(cost_price, 2),
                 'market_value': round(market_value, 2),
+                'industry': industry,
+                'instrument_type': instrument_type,
             })
 
         pos_list.sort(key=lambda item: item['market_value'], reverse=True)
