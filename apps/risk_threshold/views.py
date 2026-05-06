@@ -1,7 +1,8 @@
 ﻿"""Risk threshold views backed by MongoDB account snapshots."""
 
 import logging
-from datetime import datetime, timedelta
+from collections import OrderedDict
+from datetime import datetime, time, timedelta
 
 import numpy as np
 from django.http import JsonResponse
@@ -10,6 +11,11 @@ from rest_framework.decorators import api_view
 from apps.utils.data_storage import get_account_history, get_latest_account_state
 
 logger = logging.getLogger(__name__)
+
+TRADING_SESSIONS = (
+    (time(9, 30), time(11, 30)),
+    (time(13, 0), time(15, 0)),
+)
 
 
 def get_mock_account_history(days=30):
@@ -30,6 +36,61 @@ def get_mock_account_history(days=30):
             'snapshot_time': datetime.now().isoformat(timespec='seconds'),
         })
     return history
+
+
+def _parse_snapshot_time(snapshot_time):
+    if not snapshot_time:
+        return None
+    if isinstance(snapshot_time, datetime):
+        return snapshot_time
+    text = str(snapshot_time).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S'):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _is_trading_time(moment):
+    if not moment:
+        return False
+    if moment.weekday() >= 5:
+        return False
+    current = moment.time()
+    for start, end in TRADING_SESSIONS:
+        if start <= current <= end:
+            return True
+    return False
+
+
+def _filter_risk_history_to_trading_closes(history):
+    """
+    风险指标仅使用正常交易时段内的样本，并按交易日收敛为一条收盘近似快照。
+    这样可以避免夜间采样污染日收益率，也避免把 5 分钟快照误当成日频数据。
+    """
+    filtered_by_date = OrderedDict()
+    for record in history or []:
+        snapshot_dt = _parse_snapshot_time(record.get('snapshot_time'))
+        if not _is_trading_time(snapshot_dt):
+            continue
+        normalized = dict(record)
+        normalized['_snapshot_dt'] = snapshot_dt
+        date_key = normalized.get('date') or snapshot_dt.date().isoformat()
+        previous = filtered_by_date.get(date_key)
+        if previous is None or snapshot_dt > previous['_snapshot_dt']:
+            filtered_by_date[date_key] = normalized
+
+    normalized_history = []
+    for record in filtered_by_date.values():
+        normalized_history.append({key: value for key, value in record.items() if key != '_snapshot_dt'})
+    return normalized_history
 
 
 def calculate_max_principal_loss(account_history):
@@ -178,6 +239,7 @@ def get_risk_level(max_loss_rate, volatility, max_drawdown, var_rate):
 
 def get_history_for_risk(account_id, days=30, allow_mock=True):
     history = get_account_history(account_id, days=days)
+    history = _filter_risk_history_to_trading_closes(history)
     if history:
         return history, False, 'mongodb_history'
     if allow_mock:
@@ -203,6 +265,7 @@ def get_risk_assessment(request):
 
     if start_date or end_date:
         history = get_account_history(account_id, start_date=start_date, end_date=end_date)
+        history = _filter_risk_history_to_trading_closes(history)
         is_mock = False
         data_source = 'mongodb_history'
         if not history and (use_mock or True):
