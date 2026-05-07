@@ -5,6 +5,7 @@ from .views import (
     weekly_comparison,
     area_comparison
 )
+from .attribution_views import asset_attribution
 from .strategy_views import run_strategy, download_strategy_report
 
 # 时间段对比模块路由 (供主 urls.py 引用)
@@ -21,6 +22,7 @@ areacomparison_urlpatterns = [
 # 策略与资产对比模块路由
 urlpatterns = [
     path('asset_comparison/', asset_comparison, name='asset_comparison'),
+    path('asset_attribution/', asset_attribution, name='asset_attribution'),
     path('run-strategy/', run_strategy, name='run-strategy'),
     path('download-strategy-report/', download_strategy_report, name='download-strategy-report'),
 ]
